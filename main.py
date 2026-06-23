@@ -5,7 +5,7 @@ app = FastAPI()
 
 lista_clientes = []
 
-# Modelo de datos
+# Modelo de datoss
 class Cliente(BaseModel):
     id: int
     nombre: str
