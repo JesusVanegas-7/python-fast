@@ -1,39 +1,54 @@
 from fastapi import APIRouter, HTTPException
-from typing import List
+from sqlmodel import Session, select
 from ..modelos.clientes import Cliente
-# Importamos la lista global saliendo de la carpeta con ".." [00:09:20]
-from ..listas import lista_clientes 
+from ..conexion_bd import engine
 
 rutas_clientes = APIRouter()
 
 @rutas_clientes.get("/clientes")
 def listar_clientes():
-    return {"Clientes": lista_clientes}
+    with Session(engine) as session:
+        clientes = session.exec(select(Cliente)).all()
+        return {"Clientes": clientes}
 
 @rutas_clientes.get("/clientes/{id}")
 def listar_cliente(id: int):
-    for cliente in lista_clientes:
-        if cliente.id == id:
-            return cliente
-    return {"mensaje": "Cliente no encontrado"}
+    with Session(engine) as session:
+        cliente = session.get(Cliente, id)
+        if not cliente:
+            return {"mensaje": "Cliente no encontrado"}
+        return cliente
 
 @rutas_clientes.post("/clientes")
 def crear_cliente(datos_cliente: Cliente):
-    lista_clientes.append(datos_cliente)
-    return {"mensaje": "Se creó el cliente"}
+    with Session(engine) as session:
+        session.add(datos_cliente)
+        session.commit()
+        session.refresh(datos_cliente)
+        return {"mensaje": "Se creó el cliente"}
 
 @rutas_clientes.put("/clientes/{id}")
 def editar_cliente(id: int, datos_cliente: Cliente):
-    for indice, cliente in enumerate(lista_clientes):
-        if cliente.id == id:
-            lista_clientes[indice] = datos_cliente
-            return {"mensaje": "Cliente actualizado"}
-    return {"mensaje": "Cliente no encontrado"}
+    with Session(engine) as session:
+        cliente_db = session.get(Cliente, id)
+        if not cliente_db:
+            return {"mensaje": "Cliente no encontrado"}
+        
+        datos_dict = datos_cliente.model_dump(exclude_unset=True)
+        for key, value in datos_dict.items():
+            setattr(cliente_db, key, value)
+        
+        session.add(cliente_db)
+        session.commit()
+        session.refresh(cliente_db)
+        return {"mensaje": "Cliente actualizado"}
 
 @rutas_clientes.delete("/clientes/{id}")
 def eliminar_cliente(id: int):
-    for indice, cliente in enumerate(lista_clientes):
-        if cliente.id == id:
-            lista_clientes.pop(indice)
-            return {"mensaje": "Cliente eliminado"}
-    return {"mensaje": "Cliente no encontrado"}
+    with Session(engine) as session:
+        cliente = session.get(Cliente, id)
+        if not cliente:
+            return {"mensaje": "Cliente no encontrado"}
+        session.delete(cliente)
+        session.commit()
+        return {"mensaje": "Cliente eliminado"}

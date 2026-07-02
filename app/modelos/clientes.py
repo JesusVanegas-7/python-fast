@@ -1,6 +1,6 @@
-from pydantic import BaseModel
+from sqlmodel import SQLModel, Field
 
-class Cliente(BaseModel):
-    id: int
+class Cliente(SQLModel, table=True):
+    id: int | None = Field(default=None, primary_key=True)
     nombre: str
     descripcion: str | None = None

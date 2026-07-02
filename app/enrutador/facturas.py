@@ -1,46 +1,63 @@
 from fastapi import APIRouter, HTTPException
-from typing import List
+from sqlmodel import Session, select
 from ..modelos.facturas import Factura
-# Importamos las dos listas compartidas [00:09:55]
-from ..listas import lista_facturas, lista_clientes 
+from ..modelos.clientes import Cliente
+from ..conexion_bd import engine
 
 rutas_facturas = APIRouter()
 
 @rutas_facturas.get("/facturas")
 def listar_facturas():
-    return {"Facturas": lista_facturas}
+    with Session(engine) as session:
+        facturas = session.exec(select(Factura)).all()
+        return {"Facturas": facturas}
 
 @rutas_facturas.get("/facturas/{id}")
 def listar_factura(id: int):
-    for factura in lista_facturas:
-        if factura.id == id:
-            return factura
-    return {"mensaje": "Factura no encontrada"}
+    with Session(engine) as session:
+        factura = session.get(Factura, id)
+        if not factura:
+            return {"mensaje": "Factura no encontrada"}
+        return factura
 
 @rutas_facturas.post("/facturas")
 def crear_factura(datos_factura: Factura):
-    # VALIDACIÓN: Verificamos si el cliente realmente existe en la lista global
-    # En tu modelo actual el cliente se pasa como un string (nombre), pero si necesitas buscarlo por ID harías esto:
-    cliente_existe = any(c.nombre == datos_factura.cliente for c in lista_clientes)
-    
-    # Nota: Si en tus pruebas manejas IDs en vez de nombres, la validación sería:
-    # cliente_existe = any(c.id == int(datos_factura.cliente) for c in lista_clientes)
+    with Session(engine) as session:
+        # VALIDACIÓN: Verificamos si el cliente existe por nombre (según lógica previa)
+        # O por ID si se prefiere. Aquí seguimos lo que parece ser la intención original:
+        sentencia = select(Cliente).where(Cliente.nombre == datos_factura.cliente)
+        cliente_existe = session.exec(sentencia).first()
+        
+        if not cliente_existe:
+            return {"mensaje": "Cliente no encontrado, no se puede crear la factura"}
 
-    lista_facturas.append(datos_factura)
-    return {"mensaje": "Factura creada"}
+        session.add(datos_factura)
+        session.commit()
+        session.refresh(datos_factura)
+        return {"mensaje": "Factura creada"}
 
 @rutas_facturas.put("/facturas/{id}")
 def editar_factura(id: int, datos_factura: Factura):
-    for indice, factura in enumerate(lista_facturas):
-        if factura.id == id:
-            lista_facturas[indice] = datos_factura
-            return {"mensaje": "Factura actualizada"}
-    return {"mensaje": "Factura no encontrada"}
+    with Session(engine) as session:
+        factura_db = session.get(Factura, id)
+        if not factura_db:
+            return {"mensaje": "Factura no encontrada"}
+        
+        datos_dict = datos_factura.model_dump(exclude_unset=True)
+        for key, value in datos_dict.items():
+            setattr(factura_db, key, value)
+            
+        session.add(factura_db)
+        session.commit()
+        session.refresh(factura_db)
+        return {"mensaje": "Factura actualizada"}
 
 @rutas_facturas.delete("/facturas/{id}")
 def eliminar_factura(id: int):
-    for indice, factura in enumerate(lista_facturas):
-        if factura.id == id:
-            lista_facturas.pop(indice)
-            return {"mensaje": "Factura eliminada"}
-    return {"mensaje": "Factura no encontrada"}
+    with Session(engine) as session:
+        factura = session.get(Factura, id)
+        if not factura:
+            return {"mensaje": "Factura no encontrada"}
+        session.delete(factura)
+        session.commit()
+        return {"mensaje": "Factura eliminada"}
