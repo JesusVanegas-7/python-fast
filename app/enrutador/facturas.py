@@ -1,63 +1,54 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status, Depends
 from sqlmodel import Session, select
-from ..modelos.facturas import Factura
 from ..modelos.clientes import Cliente
+# Asegúrate de importar tus modelos de facturas desde tus archivos locales
+from ..modelos.facturas import Factura, FacturaBase 
 from ..conexion_bd import engine
 
 rutas_facturas = APIRouter()
 
+# Función auxiliar para inyectar la sesión en los endpoints [00:01:20]
+def obtener_sesion():
+    with Session(engine) as session:
+        yield session
+
+# 1. Endpoint: Listar todas las facturas de la base de datos [00:01:02]
 @rutas_facturas.get("/facturas")
-def listar_facturas():
-    with Session(engine) as session:
-        facturas = session.exec(select(Factura)).all()
-        return {"Facturas": facturas}
+def listar_facturas(mi_sesion: Session = Depends(obtener_sesion)):
+    # Ejecuta el select mapeando la entidad Factura [00:03:15, 00:04:03]
+    facturas = mi_sesion.exec(select(Factura)).all()
+    return {"Facturas": facturas}
 
-@rutas_facturas.get("/facturas/{id}")
-def listar_factura(id: int):
-    with Session(engine) as session:
-        factura = session.get(Factura, id)
-        if not factura:
-            return {"mensaje": "Factura no encontrada"}
-        return factura
-
-@rutas_facturas.post("/facturas")
-def crear_factura(datos_factura: Factura):
-    with Session(engine) as session:
-        # VALIDACIÓN: Verificamos si el cliente existe por nombre (según lógica previa)
-        # O por ID si se prefiere. Aquí seguimos lo que parece ser la intención original:
-        sentencia = select(Cliente).where(Cliente.nombre == datos_factura.cliente)
-        cliente_existe = session.exec(sentencia).first()
-        
-        if not cliente_existe:
-            return {"mensaje": "Cliente no encontrado, no se puede crear la factura"}
-
-        session.add(datos_factura)
-        session.commit()
-        session.refresh(datos_factura)
-        return {"mensaje": "Factura creada"}
-
-@rutas_facturas.put("/facturas/{id}")
-def editar_factura(id: int, datos_factura: Factura):
-    with Session(engine) as session:
-        factura_db = session.get(Factura, id)
-        if not factura_db:
-            return {"mensaje": "Factura no encontrada"}
-        
-        datos_dict = datos_factura.model_dump(exclude_unset=True)
-        for key, value in datos_dict.items():
-            setattr(factura_db, key, value)
-            
-        session.add(factura_db)
-        session.commit()
-        session.refresh(factura_db)
-        return {"mensaje": "Factura actualizada"}
-
-@rutas_facturas.delete("/facturas/{id}")
-def eliminar_factura(id: int):
-    with Session(engine) as session:
-        factura = session.get(Factura, id)
-        if not factura:
-            return {"mensaje": "Factura no encontrada"}
-        session.delete(factura)
-        session.commit()
-        return {"mensaje": "Factura eliminada"}
+# 2. Endpoint: Crear una factura vinculada a un cliente por ID [00:06:26]
+@rutas_facturas.post("/clientes/{cliente_id}/facturas")
+def crear_factura(
+    cliente_id: int, 
+    datos_factura: FacturaBase, 
+    mi_sesion: Session = Depends(obtener_sesion)
+):
+    # Buscar el cliente en la base de datos con el método .get() [00:07:43]
+    cliente_bd = mi_sesion.get(Cliente, cliente_id)
+    
+    # Validación: Si el cliente no existe en la BD, lanza error 400 [00:09:06]
+    if not cliente_bd:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El cliente con el ID {cliente_id} no existe"
+        )
+    
+    # Convertir el JSON de entrada a un diccionario de Python [00:10:37]
+    # ¡Ojo con los paréntesis en .model_dump()! Al profe se le olvidaron al inicio y le dio error [00:16:48]
+    factura_dic = datos_factura.model_dump()
+    
+    # Inyectar manualmente el cliente_id de la URL dentro del diccionario [00:11:50]
+    factura_dic["cliente_id"] = cliente_id
+    
+    # Validar y construir la instancia final del modelo Factura listo para la BD [00:12:15]
+    factura_validada = Factura.model_validate(factura_dic)
+    
+    # Guardar permanentemente en la base de datos de SQLite [00:13:03, 00:13:34]
+    mi_sesion.add(factura_validada)
+    mi_sesion.commit()
+    mi_sesion.refresh(factura_validada)
+    
+    return factura_validada

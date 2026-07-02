@@ -1,60 +1,52 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, status, Depends
 from sqlmodel import Session, select
-from ..modelos.transacciones import Transaccion
 from ..modelos.facturas import Factura
+# Asegúrate de importar tu modelo Transaccion
+from ..modelos.transacciones import Transaccion, TransaccionBase 
 from ..conexion_bd import engine
 
 rutas_transacciones = APIRouter()
 
+# Función auxiliar para inyectar la sesión [00:01:40]
+def obtener_sesion():
+    with Session(engine) as session:
+        yield session
+
+# 1. Endpoint: Listar todas las transacciones de la BD [00:04:06]
 @rutas_transacciones.get("/transacciones")
-def listar_transacciones():
-    with Session(engine) as session:
-        transacciones = session.exec(select(Transaccion)).all()
-        return {"Transacciones": transacciones}
+def listar_transacciones(mi_sesion: Session = Depends(obtener_sesion)):
+    # Consulta resumida en una sola línea usando select [00:04:20]
+    return mi_sesion.exec(select(Transaccion)).all()
 
-@rutas_transacciones.get("/transacciones/{id}")
-def listar_transaccion(id: int):
-    with Session(engine) as session:
-        transaccion = session.get(Transaccion, id)
-        if not transaccion:
-            return {"mensaje": "Transacción no encontrada"}
-        return transaccion
-
-@rutas_transacciones.post("/transacciones")
-def crear_transaccion(datos_transaccion: Transaccion):
-    with Session(engine) as session:
-        # VALIDACIÓN: Verificamos que la factura exista antes de asociarle la transacción
-        factura = session.get(Factura, datos_transaccion.factura_id)
-        if not factura:
-            return {"mensaje": "Factura no encontrada, no se puede crear la transacción"}
-        
-        session.add(datos_transaccion)
-        session.commit()
-        session.refresh(datos_transaccion)
-        return {"mensaje": "Transacción creada"}
-
-@rutas_transacciones.put("/transacciones/{id}")
-def editar_transaccion(id: int, datos_transaccion: Transaccion):
-    with Session(engine) as session:
-        transaccion_db = session.get(Transaccion, id)
-        if not transaccion_db:
-            return {"mensaje": "Transacción no encontrada"}
-        
-        datos_dict = datos_transaccion.model_dump(exclude_unset=True)
-        for key, value in datos_dict.items():
-            setattr(transaccion_db, key, value)
-            
-        session.add(transaccion_db)
-        session.commit()
-        session.refresh(transaccion_db)
-        return {"mensaje": "Transacción actualizada"}
-
-@rutas_transacciones.delete("/transacciones/{id}")
-def eliminar_transaccion(id: int):
-    with Session(engine) as session:
-        transaccion = session.get(Transaccion, id)
-        if not transaccion:
-            return {"mensaje": "Transacción no encontrada"}
-        session.delete(transaccion)
-        session.commit()
-        return {"mensaje": "Transacción eliminada"}
+# 2. Endpoint: Crear transacción vinculada a una factura [00:04:47]
+@rutas_transacciones.post("/facturas/{factura_id}/transacciones")
+def crear_transaccion(
+    factura_id: int, 
+    datos_transaccion: TransaccionBase, 
+    mi_sesion: Session = Depends(obtener_sesion)
+):
+    # Primero buscamos si la factura existe en la BD [00:04:58]
+    factura_encontrada = mi_sesion.get(Factura, factura_id)
+    
+    # Si la factura no existe, lanzamos error 400 [00:09:46]
+    if not factura_encontrada:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"La factura con el ID {factura_id} no existe"
+        )
+    
+    # Convertimos los datos a diccionario para manipular el factura_id [00:06:23, 00:07:07]
+    transaccion_dic = datos_transaccion.model_dump()
+    
+    # Inyectamos el ID de la factura a la que pertenece esta transacción [00:07:19]
+    transaccion_dic["factura_id"] = factura_id
+    
+    # Validamos el diccionario con el modelo Transaccion [00:07:26]
+    transaccion_validada = Transaccion.model_validate(transaccion_dic)
+    
+    # Guardamos en la base de datos [00:07:58, 00:08:13]
+    mi_sesion.add(transaccion_validada)
+    mi_sesion.commit()
+    mi_sesion.refresh(transaccion_validada)
+    
+    return transaccion_validada
