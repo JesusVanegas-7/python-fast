@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from ..modelos.facturas import Factura
+# Importamos las dos listas compartidas [00:09:55]
+from ..listas import lista_facturas, lista_clientes 
 
 rutas_facturas = APIRouter()
-
-lista_facturas = []
 
 @rutas_facturas.get("/facturas")
 def listar_facturas():
@@ -19,6 +19,13 @@ def listar_factura(id: int):
 
 @rutas_facturas.post("/facturas")
 def crear_factura(datos_factura: Factura):
+    # VALIDACIÓN: Verificamos si el cliente realmente existe en la lista global
+    # En tu modelo actual el cliente se pasa como un string (nombre), pero si necesitas buscarlo por ID harías esto:
+    cliente_existe = any(c.nombre == datos_factura.cliente for c in lista_clientes)
+    
+    # Nota: Si en tus pruebas manejas IDs en vez de nombres, la validación sería:
+    # cliente_existe = any(c.id == int(datos_factura.cliente) for c in lista_clientes)
+
     lista_facturas.append(datos_factura)
     return {"mensaje": "Factura creada"}
 

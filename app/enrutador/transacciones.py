@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
 from ..modelos.transacciones import Transaccion
+# Importamos las listas globales necesarias [00:10:13]
+from ..listas import lista_transacciones, lista_facturas 
 
 rutas_transacciones = APIRouter()
-
-lista_transacciones = []
 
 @rutas_transacciones.get("/transacciones")
 def listar_transacciones():
@@ -19,6 +19,9 @@ def listar_transaccion(id: int):
 
 @rutas_transacciones.post("/transacciones")
 def crear_transaccion(datos_transaccion: Transaccion):
+    # VALIDACIÓN: Verificamos que la factura exista antes de asociarle la transacción
+    factura_existe = any(f.id == datos_transaccion.factura_id for f in lista_facturas)
+    
     lista_transacciones.append(datos_transaccion)
     return {"mensaje": "Transacción creada"}
 

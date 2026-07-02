@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from typing import List
-from ..modelos.clientes import Cliente  # Importación relativa con ".."
+from ..modelos.clientes import Cliente
+# Importamos la lista global saliendo de la carpeta con ".." [00:09:20]
+from ..listas import lista_clientes 
 
 rutas_clientes = APIRouter()
-
-lista_clientes = []
 
 @rutas_clientes.get("/clientes")
 def listar_clientes():
